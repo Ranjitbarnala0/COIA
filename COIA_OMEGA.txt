@@ -1,0 +1,862 @@
+COHERENT OPTICAL INTERFERENCE ARCHITECTURE — COIA-Ω v3.2
+Low-Level Implementation Binder (LLIB): End-to-End Build Specification
+Status: PROGRAM BASELINE — Implementation-Ready
+Owner: Systems Engineering
+Document ID: COIA-OMEGA-LLIB-v3.2-2025-08-15
+
+This binder is strictly low-level. It contains numeric constraints, pin maps, net names,
+state machines, timing tables, bit-accurate registers, calibration recipes, PCB constraints,
+mechanical drawings (text spec), firmware boot sequences, JTAG chains, ICT coverage, and
+manufacturing test instructions. It is vendor-agnostic; component classes are fully specified
+so procurement can source equivalents. All indices are zero-based unless stated.
+
+
+──────────────────────────────────────────────────────────────────────────────
+0) CONSTANTS, UNITS, GLOBAL PARAMETERS
+──────────────────────────────────────────────────────────────────────────────
+q = 1.602176634e−19 C; k = 1.380649e−23 J/K; T_ref = 298.15 K.
+c = 2.99792458e8 m/s; n_fiber ≈ 1.4682; n_SiN ≈ 1.99 @ 1550 nm.
+Symbol rate (internal): 15 Gsym/s → T_sym = 66.666 ps.
+VM accumulation N ∈ {512,1024,2048}; default N=1024.
+O outputs (B_full) = 64; K streams (ERM-64) ≤ 64.
+Board input: 12 VDC nominal (11.4–12.6 V).
+
+
+──────────────────────────────────────────────────────────────────────────────
+1) PCB, MECHANICAL, AND LAYOUT RULES
+──────────────────────────────────────────────────────────────────────────────
+1.1 BOARD OUTLINE
+  Form factor: PCIe full-length, full-height accelerator; 312 mm × 112 mm; max component height 14.5 mm (both sides).
+  Mounting holes: M3, plated, keep-out Ø7 mm; positions: (x,y) mm from lower-left origin: (15,15),(297,15),(297,97),(15,97).
+  Edge fingers: PCIe Gen5 x16; gold thickness ≥ 30 µin; beveled 45°.
+
+1.2 PCB STACKUP (12 LAYERS; MEGTRON-6 CLASS MATERIAL)
+  L1  Top signal (50 Ω microstrip); Cu 35 µm; soldermask.
+  L2  GND solid.
+  L3  Stripline HS1 (50 Ω); Cu 25 µm; core h ≈ 100 µm; εr ≈ 3.5.
+  L4  POWER_AFE (3V3_A; 1V8_A).
+  L5  Stripline HS2 (50 Ω).
+  L6  GND solid.
+  L7  Stripline HS3 (50 Ω).
+  L8  POWER_DIG (0V85; 1V2_PLL; 3V3_D).
+  L9  Stripline HS4 (50 Ω).
+  L10 GND solid.
+  L11 Control (I²C/SPI/JTAG/Housekeeping).
+  L12 Bottom signal (50 Ω microstrip).
+  Differential pairs target 100 Ω ±10 %. Back-drill HS via stubs to ≤ 250 µm. Via antipads ≥ 300 µm.
+
+1.3 CONTROLLED IMPEDANCE GEOMETRY (GUIDANCE VALUES)
+  50 Ω microstrip (L1/L12): width ≈ 7.5 mil on 3.5 mil soldermask, 4 mil dielectric (εr 3.5).
+  100 Ω differential: pair width 6.0 mil, gap 6.0 mil (tune per fab coupon).
+
+1.4 KEEP-OUTS AND COPPER POURS
+  Under laser modules: no copper L1/L2; thermal via grid 1.0 mm pitch to spread heat to L10 plane.
+  Under photonics: ground shield planes with stitching vias 1.0 mm pitch; no split planes beneath TIAs.
+
+
+──────────────────────────────────────────────────────────────────────────────
+2) POWER TREE, REGULATORS, SEQUENCING, AND DECOUPLING
+──────────────────────────────────────────────────────────────────────────────
+2.1 RAILS AND LIMITS
+  R0  +12VIN     12.0 V ±5 %   Imax 22 A   ripple pk-pk ≤ 120 mV (10 kHz–10 MHz).
+  R1  +5V_LAS     5.0 V ±3 %   Imax 6 A    noise ≤ 10 mV_rms; lasers and bias drivers.
+  R2  +3V3_A      3.3 V ±3 %   Imax 8 A    noise ≤ 5 mV_rms; AFE analog.
+  R3  +3V3_D      3.3 V ±3 %   Imax 10 A   noise ≤ 10 mV_rms; logic, housekeeping.
+  R4  +2V5_BIAS   2.5 V ±2 %   Imax 2 A    noise ≤ 3 mV_rms; laser DACs, bias.
+  R5  +1V8_A      1.8 V ±2 %   Imax 6 A    noise ≤ 2 mV_rms; analog blocks.
+  R6  +1V2_PLL    1.2 V ±2 %   Imax 2 A    noise ≤ 1 mV_rms; PLL/VCO only.
+  R7  +0V85_CORE  0.85 V ±2 %  Imax 45 A   digital core/FPGA/SoC.
+
+2.2 SEQUENCING (TIMELINE)
+  t0  Enable R6; soft-start 3 ms; settle < 5 ms; assert PG6.
+  t1  Enable R5 (after PG6); delay 2 ms; assert PG5.
+  t2  Enable R2 (after PG5); delay 2 ms; assert PG2.
+  t3  Enable R3 (after PG2); delay 1 ms; assert PG3.
+  t4  Enable R7 (after PG3); delay 1 ms; slew ≤ 2 A/µs; assert PG7.
+  t5  Enable R1 (after interlock OK and PG7); ramp 5 ms.
+  Power-down reverse order with doubled delays. MCU supervises and logs fault codes.
+
+2.3 DECOUPLING REQUIREMENTS
+  At each AFE supply pin cluster: ≥ 1 µF 0402 + 100 nF 0402 + 1 nF 0201 within 3 mm.
+  At digital core: ≥ 470 µF polymer bulk near FPGA, + distributed 10 µF 0603 and 100 nF 0402 per bank.
+
+2.4 SENSE AND TELEMETRY
+  Inline shunts on R1,R2,R5,R7; 0.5 mΩ 1 %; INA-class current monitors to MCU over I²C @ 400 kHz.
+
+
+──────────────────────────────────────────────────────────────────────────────
+3) CLOCKING, PLL, AND DISTRIBUTION
+──────────────────────────────────────────────────────────────────────────────
+3.1 OCXO 100 MHz
+  Jitter integrated 12 kHz–20 MHz ≤ 60 fs_rms; phase noise ≤ −140 dBc/Hz @ 10 kHz offset.
+  REFCLK_IN SMA optional; AC-coupled; 100 Ω differential termination.
+
+3.2 MAIN PLL (→ 15 GHz)
+  N = 150 integer; frac-N disabled; loop BW ≈ 250 kHz; PM ≥ 55°.
+  External loop filter: Rz 2.2 kΩ; Cz 220 pF; Cp 22 pF (tune to PVT).
+
+3.3 DISTRIBUTION
+  H-tree matched ±20 ps 99%ile; differential CML; AC coupling 100 nF; bias at receiver 1.2 V common-mode.
+
+
+──────────────────────────────────────────────────────────────────────────────
+4) OPTICAL SUBSYSTEM: LO, SIGNAL, AWG, HYBRIDS, PDs
+──────────────────────────────────────────────────────────────────────────────
+4.1 LO
+  LO ≥ 150 mW at die edge; Rx LO 3–10 mW per hybrid. Linewidth ≤ 100 kHz (10 ms), ≤ 1 MHz (1 s).
+  RIN ≤ −155 dB/Hz (10 MHz–10 GHz). LO_FAULT if Rx LO < 3 mW for ≥ 5 ms.
+
+4.2 SIGNAL LASERS (≤ 8 λ)
+  Each ≥ 30 mW; linewidth ≤ 500 kHz; RIN ≤ −150 dB/Hz. VOA step 0.1 dB; stability ±0.05 dB/°C.
+
+4.3 AWG AND POLARIZATION
+  8×100 GHz channels; ripple ≤ 0.5 dB P95; crosstalk ≤ −25 dB raw. PM fiber; polarization splitter/rotator; TE only.
+
+4.4 HYBRIDS AND PDs
+  90° hybrids; amplitude imbalance ≤ 0.5 dB; phase error ≤ 1.5°. PDs: R=0.55–0.70 A/W; Cj ≤ 120 fF;
+  BW ≥ 30 GHz; I_sat ≥ 15 mA; Idark ≤ 2 nA @ 25 °C.
+
+
+──────────────────────────────────────────────────────────────────────────────
+5) ANALOG FRONT-END (TIA) SPECIFICATION
+──────────────────────────────────────────────────────────────────────────────
+5.1 TRANSIMPEDANCE
+  Target Z_t ≈ 3.5 kΩ; selectable ENBW: 7.5/10/12 GHz.
+5.2 NOISE AND STABILITY
+  i_n ≤ 4.5 pA/√Hz typical; ≤ 7.0 pA/√Hz max. Peaking ≤ 1 dB; phase margin ≥ 55°.
+5.3 TRIMS
+  Gain ±3 %; offset ±5 mV via 10-bit DAC. Interface: TIA_TRIM[i] (MMIO).
+
+──────────────────────────────────────────────────────────────────────────────
+6) READOUT: VM/CDSR AND SM/ERM-64
+──────────────────────────────────────────────────────────────────────────────
+6.1 VM/CDSR
+  C_f = 56 pF; dielectric C0G/NP0; leakage R_leak ≥ 38 GΩ; kT/C ≈ 8.6 µV_rms. Integrate N symbols, dump once.
+  State machine: RESET→PRECHARGE→INTEGRATE→HOLD→TRANSFER→CONVERT→DUMP→IDLE.
+  ADC: 12-bit SAR, segmented 4+8; unit cap C_unit = 6 fF; comparator offset < 200 µV after auto-zero; INL/DNL ≤ ±0.5 LSB.
+
+6.2 SM/ERM-64
+  Passive I/Q mixers; LO 0 dBm; quadrature error < 1° after trim. Gm-C 5th order fc=1.5 GHz; CIC OSR=8; SAR 12-bit @ 250 MS/s.
+  ENOB ≥ 7.5; stopband ≥ 40 dB; inter-channel isolation ≥ 50 dB; ΔP ≈ +24 W when ERM-64 enabled.
+
+
+──────────────────────────────────────────────────────────────────────────────
+7) TIMING, JITTER, METASTABILITY
+──────────────────────────────────────────────────────────────────────────────
+Triple-phase sampling at 0/120/240°; majority vote. Vernier TDC ΔT ≈ 4 ps; range 7-bit; bubble-corrected encoder.
+Per-lane tail fit p_raw(Δt)=exp((t0−Δt)/τ) using ≥ 1e9 decisions; guard T_guard = max(5τ,12 ps).
+Silent error bound p_silent ≤ 3e−22/decision; E_FLAG on guard violation; deterministic replay.
+
+
+──────────────────────────────────────────────────────────────────────────────
+8) THERMAL IDENTIFICATION AND CONTROL
+──────────────────────────────────────────────────────────────────────────────
+Identify H(T) via 50 mW, 2 s steps per heater. Compute D=(HᵀH+λI)⁻¹Hᵀ with λ via L-curve.
+Inner OPLL ≈ 5 kHz; outer MPC sample 100 ms; |ΔT_zone| ≤ 50 mK; |Δu| ≤ 0.1 W/step.
+Acceptance: φ_RMS ≤ 2.0° (P95, 30 min); re-lock ≤ 100 ms on profiles: linear +5 K; checkerboard ±2 K; random walk σ=0.5 K.
+
+
+──────────────────────────────────────────────────────────────────────────────
+9) INTERCONNECT, FABRIC, MEMORY, AND I/O (INCOHERENT WDM)
+──────────────────────────────────────────────────────────────────────────────
+3-stage Clos per rack; 8–16 λ@100 GHz; per-stage IL ≤ 1.0 dB. 400G-class Ethernet PHY per link.
+FEC RS(544,514) or superior; post-FEC BER ≤ 1e−15; latency ≤ 150 ns/hop. Hop latency target ≤ 2 µs (99%ile).
+CXL 3.0 pooled memory ≥ 40 TB; BW ≥ 5 TB/s; NVMe-oF ingress ≥ 1 TB/s. PCIe Gen5 x16 payload ≥ 48 GB/s (1 ms windows).
+
+
+──────────────────────────────────────────────────────────────────────────────
+10) REGISTER MAP — FULL ENUMERATION (B_full O=64; K=64)
+──────────────────────────────────────────────────────────────────────────────
+Address space is little-endian. All addresses below are 32-bit word addresses (byte = address*4).
+Blocks:
+  CLOCK:  0x0000–0x00FF
+  OPLL:   0x0100–0x01FF
+  MESH:   0x0200–0x02FF
+  CDSR:   0x0300–0x03FF (per output i: CFG/N/TIM/STAT)
+  SM:     0x0400–0x04FF (per stream s: CFG/STAT)
+  TDC:    0x0500–0x05FF
+  REPLAY: 0x0600–0x06FF
+  DMA:    0x0700–0x07FF
+  THERM:  0x0800–0x08FF
+
+Common fields use [msb:lsb] notation. Reset values given if applicable.
+
+10.1 CDSR PER-OUTPUT REGISTERS (i ∈ [0..63])
+
+  i=00: CDSR_CFG  @0x0310  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0314  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0318  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x031C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=01: CDSR_CFG  @0x0320  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0324  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0328  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x032C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=02: CDSR_CFG  @0x0330  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0334  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0338  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x033C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=03: CDSR_CFG  @0x0340  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0344  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0348  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x034C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=04: CDSR_CFG  @0x0350  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0354  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0358  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x035C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=05: CDSR_CFG  @0x0360  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0364  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0368  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x036C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=06: CDSR_CFG  @0x0370  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0374  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0378  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x037C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=07: CDSR_CFG  @0x0380  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0384  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0388  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x038C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=08: CDSR_CFG  @0x0390  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0394  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0398  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x039C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=09: CDSR_CFG  @0x03A0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x03A4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x03A8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x03AC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=10: CDSR_CFG  @0x03B0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x03B4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x03B8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x03BC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=11: CDSR_CFG  @0x03C0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x03C4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x03C8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x03CC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=12: CDSR_CFG  @0x03D0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x03D4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x03D8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x03DC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=13: CDSR_CFG  @0x03E0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x03E4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x03E8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x03EC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=14: CDSR_CFG  @0x03F0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x03F4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x03F8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x03FC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=15: CDSR_CFG  @0x0400  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0404  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0408  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x040C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=16: CDSR_CFG  @0x0410  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0414  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0418  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x041C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=17: CDSR_CFG  @0x0420  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0424  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0428  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x042C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=18: CDSR_CFG  @0x0430  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0434  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0438  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x043C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=19: CDSR_CFG  @0x0440  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0444  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0448  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x044C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=20: CDSR_CFG  @0x0450  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0454  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0458  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x045C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=21: CDSR_CFG  @0x0460  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0464  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0468  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x046C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=22: CDSR_CFG  @0x0470  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0474  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0478  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x047C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=23: CDSR_CFG  @0x0480  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0484  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0488  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x048C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=24: CDSR_CFG  @0x0490  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0494  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0498  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x049C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=25: CDSR_CFG  @0x04A0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x04A4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x04A8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x04AC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=26: CDSR_CFG  @0x04B0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x04B4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x04B8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x04BC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=27: CDSR_CFG  @0x04C0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x04C4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x04C8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x04CC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=28: CDSR_CFG  @0x04D0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x04D4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x04D8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x04DC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=29: CDSR_CFG  @0x04E0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x04E4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x04E8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x04EC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=30: CDSR_CFG  @0x04F0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x04F4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x04F8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x04FC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=31: CDSR_CFG  @0x0500  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0504  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0508  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x050C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=32: CDSR_CFG  @0x0510  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0514  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0518  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x051C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=33: CDSR_CFG  @0x0520  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0524  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0528  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x052C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=34: CDSR_CFG  @0x0530  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0534  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0538  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x053C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=35: CDSR_CFG  @0x0540  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0544  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0548  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x054C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=36: CDSR_CFG  @0x0550  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0554  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0558  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x055C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=37: CDSR_CFG  @0x0560  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0564  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0568  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x056C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=38: CDSR_CFG  @0x0570  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0574  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0578  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x057C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=39: CDSR_CFG  @0x0580  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0584  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0588  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x058C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=40: CDSR_CFG  @0x0590  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0594  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0598  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x059C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=41: CDSR_CFG  @0x05A0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x05A4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x05A8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x05AC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=42: CDSR_CFG  @0x05B0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x05B4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x05B8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x05BC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=43: CDSR_CFG  @0x05C0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x05C4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x05C8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x05CC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=44: CDSR_CFG  @0x05D0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x05D4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x05D8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x05DC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=45: CDSR_CFG  @0x05E0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x05E4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x05E8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x05EC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=46: CDSR_CFG  @0x05F0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x05F4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x05F8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x05FC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=47: CDSR_CFG  @0x0600  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0604  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0608  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x060C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=48: CDSR_CFG  @0x0610  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0614  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0618  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x061C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=49: CDSR_CFG  @0x0620  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0624  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0628  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x062C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=50: CDSR_CFG  @0x0630  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0634  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0638  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x063C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=51: CDSR_CFG  @0x0640  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0644  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0648  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x064C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=52: CDSR_CFG  @0x0650  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0654  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0658  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x065C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=53: CDSR_CFG  @0x0660  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0664  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0668  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x066C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=54: CDSR_CFG  @0x0670  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0674  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0678  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x067C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=55: CDSR_CFG  @0x0680  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0684  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0688  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x068C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=56: CDSR_CFG  @0x0690  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0694  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0698  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x069C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=57: CDSR_CFG  @0x06A0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x06A4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x06A8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x06AC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=58: CDSR_CFG  @0x06B0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x06B4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x06B8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x06BC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=59: CDSR_CFG  @0x06C0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x06C4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x06C8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x06CC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=60: CDSR_CFG  @0x06D0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x06D4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x06D8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x06DC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=61: CDSR_CFG  @0x06E0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x06E4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x06E8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x06EC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=62: CDSR_CFG  @0x06F0  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x06F4  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x06F8  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x06FC  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+  i=63: CDSR_CFG  @0x0700  [27] EN, [26] BANK, [25:24] ENBW_SEL, [23:16] GAIN_TRIM, reset 0x00000000
+       CDSR_N    @0x0704  [15:0] N (512/1024/2048), reset 0x00000400
+       CDSR_TIM  @0x0708  [31:24] T_PRE_ns, [23:16] T_HOLD_ns, [15:8] T_XFER_ns, [7:0] T_DUMP_ns
+       CDSR_STAT @0x070C  [31] RDY, [30] OVF, [29] UF, [28] CAL_REQ, RO
+
+10.2 SM PER-STREAM REGISTERS (s ∈ [0..63])
+
+  s=00: SM_CFG  @0x0410  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0414  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=01: SM_CFG  @0x0420  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0424  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=02: SM_CFG  @0x0430  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0434  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=03: SM_CFG  @0x0440  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0444  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=04: SM_CFG  @0x0450  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0454  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=05: SM_CFG  @0x0460  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0464  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=06: SM_CFG  @0x0470  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0474  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=07: SM_CFG  @0x0480  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0484  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=08: SM_CFG  @0x0490  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0494  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=09: SM_CFG  @0x04A0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x04A4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=10: SM_CFG  @0x04B0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x04B4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=11: SM_CFG  @0x04C0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x04C4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=12: SM_CFG  @0x04D0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x04D4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=13: SM_CFG  @0x04E0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x04E4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=14: SM_CFG  @0x04F0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x04F4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=15: SM_CFG  @0x0500  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0504  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=16: SM_CFG  @0x0510  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0514  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=17: SM_CFG  @0x0520  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0524  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=18: SM_CFG  @0x0530  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0534  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=19: SM_CFG  @0x0540  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0544  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=20: SM_CFG  @0x0550  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0554  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=21: SM_CFG  @0x0560  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0564  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=22: SM_CFG  @0x0570  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0574  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=23: SM_CFG  @0x0580  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0584  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=24: SM_CFG  @0x0590  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0594  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=25: SM_CFG  @0x05A0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x05A4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=26: SM_CFG  @0x05B0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x05B4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=27: SM_CFG  @0x05C0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x05C4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=28: SM_CFG  @0x05D0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x05D4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=29: SM_CFG  @0x05E0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x05E4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=30: SM_CFG  @0x05F0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x05F4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=31: SM_CFG  @0x0600  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0604  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=32: SM_CFG  @0x0610  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0614  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=33: SM_CFG  @0x0620  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0624  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=34: SM_CFG  @0x0630  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0634  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=35: SM_CFG  @0x0640  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0644  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=36: SM_CFG  @0x0650  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0654  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=37: SM_CFG  @0x0660  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0664  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=38: SM_CFG  @0x0670  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0674  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=39: SM_CFG  @0x0680  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0684  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=40: SM_CFG  @0x0690  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0694  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=41: SM_CFG  @0x06A0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x06A4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=42: SM_CFG  @0x06B0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x06B4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=43: SM_CFG  @0x06C0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x06C4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=44: SM_CFG  @0x06D0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x06D4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=45: SM_CFG  @0x06E0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x06E4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=46: SM_CFG  @0x06F0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x06F4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=47: SM_CFG  @0x0700  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0704  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=48: SM_CFG  @0x0710  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0714  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=49: SM_CFG  @0x0720  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0724  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=50: SM_CFG  @0x0730  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0734  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=51: SM_CFG  @0x0740  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0744  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=52: SM_CFG  @0x0750  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0754  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=53: SM_CFG  @0x0760  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0764  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=54: SM_CFG  @0x0770  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0774  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=55: SM_CFG  @0x0780  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0784  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=56: SM_CFG  @0x0790  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0794  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=57: SM_CFG  @0x07A0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x07A4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=58: SM_CFG  @0x07B0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x07B4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=59: SM_CFG  @0x07C0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x07C4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=60: SM_CFG  @0x07D0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x07D4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=61: SM_CFG  @0x07E0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x07E4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=62: SM_CFG  @0x07F0  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x07F4  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+  s=63: SM_CFG  @0x0800  [31] EN, [30:28] MODE, [27:24] GmC_BIAS, [23:16] MIX_TRIM, [15:0] CIC_CFG
+       SM_STAT @0x0804  [31] LOCK, [30] SAT, [29] CLIP, [28] CRCERR, RO
+
+
+──────────────────────────────────────────────────────────────────────────────
+11) FPGA/SoC PIN MAPS, JTAG CHAIN, AND RESET
+──────────────────────────────────────────────────────────────────────────────
+11.1 JTAG CHAIN (HEADER J1, 2×7 0.1")
+  J1-1 TCK, J1-3 TMS, J1-5 TDI, J1-7 TDO, J1-9 TRST_N, J1-2/4/6/8 GND, J1-11 3V3_D, J1-13 SRST, J1-14 GND.
+  Chain order: FPGA → MCU → CPLD. Pull-ups 10 kΩ on TMS, TDI; pull-down 10 kΩ on TCK.
+
+11.2 RESET AND BOOT
+  RESET_N global active-low; deassert after all PG asserted + 10 ms. BOOT_MODE[2:0] strapped to 0b101 (QSPI).
+
+11.3 PCIe Gen5 x16
+  REFCLK differential to FPGA pins REFCLK_P/N. Lanes 0..15 mapped to FPGA GT quads Q0..Q3. Spread-spectrum disabled at device.
+
+11.4 DMA RINGS
+  BAR0 MMIO for registers; BAR1 for doorbells. MSI-X table with ≥ 64 vectors; vector affinity set to dedicated CPU cores.
+
+
+──────────────────────────────────────────────────────────────────────────────
+12) SCHEMATIC NET NAMING CONVENTIONS
+──────────────────────────────────────────────────────────────────────────────
+  +12VIN, +5V_LAS, +3V3_A, +3V3_D, +2V5_BIAS, +1V8_A, +1V2_PLL, +0V85_CORE.
+  CLK_100M_OCXO, CLK_15G_{A..D}, REFCLK_IN_P/N.
+  LO_IN, LO_SPLIT_L{0..15}, LO_RX_{i}, SIG_LAMBDA{0..7}, AWG_{IN,OUT}{0..7}.
+  HYB_I_{i}, HYB_Q_{i}, PD_I_{i}, PD_Q_{i}, TIA_IN_{i}, TIA_OUT_{i}.
+  CDSR_{i}_{A/B}, SAR_{i}, SM_LO_{s}, MIX_IQ_{s}, GMC_{s}, ADC_{s}.
+  JTAG_TCK, JTAG_TMS, JTAG_TDI, JTAG_TDO, JTAG_TRST_N, RESET_N, BOOT_MODE[2:0].
+  I2C_SCL, I2C_SDA, SPI_{SCLK,MOSI,MISO,CSn}, UART_TX/RX.
+
+
+──────────────────────────────────────────────────────────────────────────────
+13) MANUFACTURING TEST: ICT + BOUNDARY SCAN + OPTICAL
+──────────────────────────────────────────────────────────────────────────────
+13.1 IN-CIRCUIT TEST (ICT)
+  Bed-of-nails pads: each rail test pad; shunt sense Kelvin pads; JTAG header J1; EEPROM and MCU I²C pads.
+  Tests: shorts/opens; rail voltages; current draw; EEPROM presence; MCU boot.
+
+13.2 BOUNDARY SCAN
+  Run BSDL scan; verify chain length and IDCODE. Toggle GPIOs for LEDs and relays; verify interlocks.
+
+13.3 OPTICAL BRING-UP
+  Attach loopback fibers. Enable LO; verify LO_RX ≥ 3 mW across hybrids. Inject PRBS via modulators; measure at taps;
+  target IL map P95 ≤ 5.0 dB; store IL_Map.csv.
+
+13.4 AFE TEST
+  Inject calibrated optical tone; sweep ENBW; record SNR and ENOB; store P2_SM.csv and P2_VM.csv.
+
+13.5 TDC AND GUARDS
+  Run CAL; verify DNL/INL ≤ ±0.5 LSB; compute τ,t0; set T_guard; store P3_TDC.csv.
+
+13.6 THERMAL IDENTIFICATION
+  Run heater steps; assemble H(T); compute D; run profiles; store P5_results.csv.
+
+
+──────────────────────────────────────────────────────────────────────────────
+14) FIRMWARE: BOOT, CALIBRATION, RUNTIME STATES
+──────────────────────────────────────────────────────────────────────────────
+14.1 BOOT STATES
+  S0_POWERUP → S1_CLOCK_PLL → S2_LO_ENABLE → S3_MESH_LOAD → S4_TIA_TRIM → S5_TDC_CAL → S6_VM_INIT → S7_SM_INIT → S8_READY.
+
+14.2 RUNTIME STATES
+  R0_IDLE → R1_RUN_VM/R2_RUN_SM → R3_REPLAY (on E_FLAG/CRC) → R4_ERROR (on persistent fault).
+
+14.3 HEALTH MONITOR
+  Every 100 ms: log power, temp, φ_RMS, τ,t0 drift, CRC counts. Thresholds trigger WARN/FAIL codes.
+
+
+──────────────────────────────────────────────────────────────────────────────
+15) CALIBRATION SCRIPTS (PSEUDOCODE)
+──────────────────────────────────────────────────────────────────────────────
+15.1 TDC_Calibrate(lanes)
+  for l in lanes:
+    write(TDC.CAL_START,l); wait DONE; (tau,t0)=read(TDC.TAU_T0[l]);
+    guard=max(5*tau,12ps); write(TDC.GUARD_PS[l],guard)
+  commit()
+
+15.2 VM_Linearity(channel)
+  short_integrator(channel); measure_kT_over_C(); assert <=10 µV_rms
+  for code in ramp(0..FS): apply_precision_current(code); read_ADC()
+  fit_INL_DNL(); trim_SAR(); store_to_NVM()
+
+15.3 SM_Trim(stream)
+  tune_quadrature(); assert image<-45 dBc; tune_GmC(fc=1.5GHz); verify stopband>=40 dB
+  sweep_toneband(); compute ENOB; assert >=7.5
+
+
+──────────────────────────────────────────────────────────────────────────────
+16) THERMAL TEST PROFILES (TEXT SPEC)
+──────────────────────────────────────────────────────────────────────────────
+Linear ramp: +5 K over 30 min uniformly. Checkerboard: adjacent heaters ±2 K alternating every 5 min.
+Random walk: σ=0.5 K with 60 s correlation. Acceptance: φ_RMS ≤ 2.0° P95; re-lock ≤ 100 ms.
+
+
+──────────────────────────────────────────────────────────────────────────────
+17) SAFETY AND INTERLOCKS
+──────────────────────────────────────────────────────────────────────────────
+Inputs: FIBER_DOOR, LO_PWR_OK, TEMP_OK, EMERGENCY_STOP. Any FALSE forces LASER_EN=0, closes shutters within 50 ms,
+logs E101/E501, and asserts FAIL LED.
+
+
+──────────────────────────────────────────────────────────────────────────────
+18) BILL OF MATERIALS TEMPLATES (PARAMETRIC SPEC)
+──────────────────────────────────────────────────────────────────────────────
+18.1 CLOCK
+  OCXO 100 MHz; jitter ≤ 60 fs_rms; 3.3 V; SMD; −20..+70 °C. Footprint: 25×22 mm.
+18.2 PLL/VCO
+  15 GHz output; integer-N; external loop filter; LVDS/CML outputs; 1.2 V core.
+18.3 LASERS
+  DFB or ECL; 1550 nm; ≥ 30 mW (signal), ≥ 150 mW (LO); TEC with NTC; I²C monitored.
+18.4 PDs
+  TWPD; R 0.6 A/W; BW ≥ 30 GHz; Cj ≤ 120 fF; flip-chip or wire-bond.
+18.5 TIAs
+  7.5/10/12 GHz selectable; input noise ≤ 4.5 pA/√Hz typ; single-supply 3.3 V analog.
+18.6 ADCs (if discrete)
+  12-bit SAR 10–20 MS/s (VM); 12-bit 250 MS/s (SM chains).
+18.7 FPGA/SoC
+  PCIe Gen5 x16 endpoint; ≥ 64 MSI-X; DMA engines; 0.85 V core @ ≤ 45 A.
+18.8 Power
+  12→0.85 V multiphase regulator (≥ 60 A peak); LDO for 1.2 V PLL noise ≤ 1 mV_rms.
+18.9 Connectors
+  PCIe edge; MT ferrules (PM for LO); SMA for REFCLK_IN; JTAG 2×7; I²C test pads.
+
+
+──────────────────────────────────────────────────────────────────────────────
+19) ACCEPTANCE TABLES (PASS/FAIL CRITERIA)
+──────────────────────────────────────────────────────────────────────────────
+A3 Insertion loss P95 ≤ 5.0 dB.  A1 Group delay mean ≤ 0.75 ns/pass.
+A2 ENOB VM ≥ 8.0 (N≥512), ≥10.0 (N=1024). ENOB SM ≥ 7.5.
+A4 φ_RMS ≤ 2.0° P95/30 min; re-lock ≤ 100 ms.
+A5 Board power ≤ 250 W typical (≤ 260 W ERM-64). A9 ERM-64 headroom maintained with ≥ 90 % VM throughput.
+A6 ≥ 3.0× J/op vs H100 on W1/W2 (uncompressed; L2 ≤ 5e−3).
+
+
+──────────────────────────────────────────────────────────────────────────────
+20) BRING-UP CHECKLIST (STEP-BY-STEP)
+──────────────────────────────────────────────────────────────────────────────
+1. Visual inspection; ICT; boundary scan.
+2. Power-on under programmable supply; verify sequencing; log rails and currents.
+3. Program MCU; verify interlocks; run power tree self-test.
+4. Enable OCXO; lock PLL; verify 15 GHz clocks; jitter report.
+5. Enable LO; verify LO_RX ≥ 3 mW; set VOAs.
+6. Load mesh defaults; run thermal identification; compute D.
+7. Trim TIAs; measure noise; set ENBW.
+8. Calibrate TDC; store τ,t0 and guards.
+9. VM path: run kT/C; linearity; ENOB (N=1024).
+10. SM path (if used): trim; ENOB; stopband.
+11. Run A3–A6 acceptance; archive CSV logs.
+12. Full pipeline W1/W2; compute J/op vs H100; archive results.
+
+
+──────────────────────────────────────────────────────────────────────────────
+21) OUTPUT/STREAM TO PIN/NET MAPPING (EXAMPLE; VENDOR-AGNOSTIC)
+──────────────────────────────────────────────────────────────────────────────
+Each VM output i maps to SAR data bus VM_D[i][11:0] and handshake VM_RDY[i].
+Each SM stream s maps to SM_D[s][11:0], SM_LOCK[s], SM_CRCERR[s]. Nets are length-matched within ±5 mil intra-bus.
+
+
+──────────────────────────────────────────────────────────────────────────────
+22) ARTIFACTS TO ARCHIVE PER UNIT
+──────────────────────────────────────────────────────────────────────────────
+IL_Map.csv, VNA_S21.csv, P2_SM.csv, P2_VM.csv, P3_TDC.csv, P5_results.csv, Power_Logs.csv,
+A6_results.csv, Fabric.csv (rack), A9_A10.csv (rack), Scaling.csv (rack), Memory.csv, Ingress.csv, IO.csv,
+Firmware hash, SBOM ID, Calibration certificate IDs for meters.
