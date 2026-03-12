@@ -1,0 +1,969 @@
+COHERENT OPTICAL INTERFERENCE ARCHITECTURE — COIA-Ω v4.0
+Production-Grade Photonic Compute Platform
+Status: ARCHITECTURE BASELINE — From Seed to Silicon
+Owner: Systems Architecture
+Document ID: COIA-OMEGA-v4.0-2026-03-12
+
+════════════════════════════════════════════════════════════════════════════
+PHILOSOPHY: EVERY SOLUTION IS AN INVENTION FROM THE SAME DNA
+════════════════════════════════════════════════════════════════════════════
+
+The seed of COIA is: coherent optical interference IS computation.
+Light fields multiply at the speed of physics. Accumulation is free (photons add).
+
+v3.2 proved this seed works. But v3.2 solved its problems by borrowing:
+  - Borrowed telecom AWGs for wavelength routing.
+  - Borrowed electronic capacitors for accumulation.
+  - Borrowed FPGA fabric for readout.
+  - Borrowed heaters from thermo-optic tuning.
+  - Borrowed PCIe electrical links for scaling.
+
+Each borrowed piece created new problems. v4.0 solves every problem with MORE
+coherence, not less. Every subsystem uses optical interference as its primitive.
+When you need to fix something, you don't grab a wrench from a different toolbox —
+you grow a new branch from the same root.
+
+
+════════════════════════════════════════════════════════════════════════════
+PART I — THE SEVEN INVENTIONS
+════════════════════════════════════════════════════════════════════════════
+These are not incremental improvements. Each is a new invention born from the
+coherent interference principle, designed so that no invention creates problems
+that require non-coherent patches.
+
+──────────────────────────────────────────────────────────────────────────
+INVENTION 1: MONOLITHIC PHOTONIC COMPUTE IC (PCIC)
+             "Kill discrete optics entirely"
+──────────────────────────────────────────────────────────────────────────
+
+v3.2 PROBLEM:
+  8 discrete DFB lasers, external AWG, fiber-coupled 90° hybrids, separate
+  photodetectors — each junction adds insertion loss (measured ~5 dB P95),
+  alignment drift, and thermal coupling. The board has 50+ fiber connections
+  that can fail. Thermal MPC fights coupling between adjacent components.
+
+v4.0 INVENTION:
+  A single silicon-nitride-on-insulator (SiN-OI) photonic integrated circuit,
+  approximately 15×20 mm, that contains ALL optical compute elements:
+
+  (a) HETEROGENEOUS III-V LASER INTEGRATION
+      Instead of 8 external DFB lasers bonded to a PCB, grow InP gain sections
+      directly on the SiN chip via micro-transfer-printing or wafer bonding.
+      A single broad-gain III-V section feeds a SiN external-cavity structure
+      with Vernier microring filters for wavelength selection. This gives you
+      8 wavelengths from ONE gain medium sharing ONE thermal mass.
+
+      Why this is inventive (not borrowed):
+      Conventional photonics puts a laser array on a separate chip and couples
+      via edge facets. Here, the laser IS the waveguide. The SiN cavity sets
+      the linewidth (sub-100 kHz achievable with high-Q SiN rings, Q > 10^6).
+      The III-V section only provides gain. Temperature tuning of the Vernier
+      rings gives wavelength control without external components.
+
+      Specifications:
+        - Single III-V gain bar: 200 mW total, partitioned across 8 λ channels
+        - LO tap: 20% of total → ~40 mW LO (>>3 mW per hybrid needed)
+        - Signal channels: each ~20 mW post-modulation
+        - Linewidth: ≤50 kHz (10 ms) via high-Q SiN cavity, improving on v3.2
+        - RIN: ≤−160 dB/Hz (cavity filtering inherently suppresses RIN)
+        - Wavelength grid: 100 GHz spacing, thermally tuned ±50 GHz
+
+  (b) ON-CHIP AWG REPLACED BY ECHELLE GRATING OR CASCADED RING FILTERS
+      The v3.2 AWG was a separate fiber-pigtailed component adding ~2 dB loss.
+      On the PCIC, wavelength demux uses either:
+        - SiN echelle grating (single etch, 0.3 dB loss, −30 dB crosstalk), or
+        - Cascaded microring filters (each ring is a wavelength-selective switch
+          that also serves as the first stage of optical accumulation — see
+          Invention 3).
+      Preference: cascaded rings, because they serve dual purpose.
+
+  (c) ON-CHIP 90° HYBRIDS
+      v3.2 used discrete 90° optical hybrids. On-chip, these are 4×4 MMI
+      (multimode interference) couplers etched in SiN. Each is ~200×30 µm.
+      For 8 wavelengths × 2 polarizations × I/Q = 32 hybrids, total area
+      is ~0.2 mm² — negligible on a 15×20 mm die.
+
+      Performance on-chip is BETTER than discrete:
+        - Amplitude imbalance: ≤0.2 dB (lithographic precision, no fiber alignment)
+        - Phase error: ≤0.5° (path lengths defined by mask, not assembly)
+        - Insertion loss per hybrid: ≤0.3 dB
+
+  (d) ON-CHIP BALANCED GERMANIUM PHOTODETECTORS
+      Epitaxial Ge-on-Si photodetectors integrated at waveguide terminations.
+      No wire bonds, no fiber coupling, no impedance discontinuities.
+        - Responsivity: 0.8–1.0 A/W (improved coupling from evanescent integration)
+        - Bandwidth: ≥40 GHz (short Ge section, low capacitance)
+        - Cj: ≤60 fF (half of v3.2 discrete PDs)
+        - Dark current: ≤1 nA @ 25°C
+        - Saturation current: ≥20 mA
+
+  (e) INSERTION LOSS BUDGET — CHIP TOTAL
+      Source to detector, worst-case path:
+        Laser to waveguide coupling:    0.5 dB  (heterogeneous, no facet)
+        Wavelength demux (rings):       0.5 dB
+        Polarization handling (on-chip): 0.3 dB
+        90° hybrid (MMI):               0.3 dB
+        Waveguide propagation (5 cm):   0.15 dB  (SiN ≤ 0.03 dB/cm)
+        Total:                          1.75 dB
+
+      Compare v3.2: 5.0 dB P95. This is a 3.25 dB improvement — which means
+      2× the signal-to-noise ratio, or equivalently, half the accumulation time
+      for the same precision. The chip ACCELERATES computation by reducing loss.
+
+  FABRICATION:
+    Standard SiN photonic foundry process (e.g., LIGENTEC AN800, or equivalent).
+    200 mm or 300 mm wafer. SiN core 800 nm, SiO2 cladding.
+    III-V micro-transfer-print for gain sections (post-processing).
+    Ge epitaxy for photodetectors (standard process module).
+    Metal heaters for Vernier ring tuning only (mW-scale, not the W-scale
+    heaters of v3.2). These are part of the laser, not fighting thermal drift
+    in the compute path — see Invention 2.
+
+
+──────────────────────────────────────────────────────────────────────────
+INVENTION 2: COHERENT SELF-REFERENCING THERMAL IMMUNITY
+             "Don't fight thermal drift — cancel it with coherence"
+──────────────────────────────────────────────────────────────────────────
+
+v3.2 PROBLEM:
+  Thermal drift causes phase errors in the interference. v3.2 fights this with
+  per-zone heaters, a thermal transfer matrix H(T), regularized inversion,
+  an inner optical PLL at 5 kHz, and an outer MPC loop at 100 ms. This is
+  50+ heaters drawing watts, a complex control system, and 100 ms re-lock time.
+  One thermal perturbation cascades across zones because the heaters couple.
+
+v4.0 INVENTION:
+  Use the coherent detection itself to reject thermal phase drift as common-mode
+  noise. This is not a control system — it's a physical cancellation.
+
+  HOW IT WORKS:
+  On the PCIC, every signal path has a matched reference path of identical
+  optical length, routed through the same thermal zone. The LO is split:
+  half goes to the signal hybrid, half goes to the reference hybrid.
+
+    Signal path:  LO_sig + E_signal → Hybrid_sig → PD_sig → I_sig + Q_sig
+    Reference path: LO_ref + E_ref   → Hybrid_ref → PD_ref → I_ref + Q_ref
+
+  Where E_ref is a known constant field (a tap from the LO itself, attenuated).
+
+  Both paths experience the SAME thermal phase shift φ_thermal because they
+  are physically adjacent on the same die (within ~100 µm). Balanced detection
+  gives:
+
+    I_sig = E_LO · E_signal · cos(Δφ + φ_thermal)
+    I_ref = E_LO · E_ref    · cos(φ_thermal)
+
+  From I_ref and Q_ref, you extract φ_thermal in real time. Then:
+
+    I_corrected = I_sig · cos(φ_thermal) + Q_sig · sin(φ_thermal)
+
+  This is a simple 2×2 rotation, done digitally after readout. No heaters.
+  No PLL. No MPC. No re-lock time.
+
+  WHY THIS IS INVENTIVE (NOT BORROWED):
+  Common-mode rejection in balanced detectors is well known for intensity noise.
+  But nobody uses a PARALLEL REFERENCE INTERFEROMETER on the same die to track
+  and cancel thermal phase drift in an optical compute system. The invention is:
+  the reference path computes NOTHING useful — it exists solely to measure what
+  the thermal environment is doing, using the exact same physical mechanism
+  (coherent interference) as the compute path. The sensor IS the compute
+  primitive.
+
+  SPECIFICATIONS:
+    - Phase tracking bandwidth: DC to ~10 MHz (limited only by PD bandwidth)
+    - Thermal rejection ratio: ≥40 dB for drift rates ≤1 K/s
+    - Residual phase error: ≤0.1° RMS (vs 2.0° in v3.2)
+    - Heater power: 0 W for compute paths (only mW for laser Vernier tuning)
+    - Re-lock time: N/A — system never loses lock, it tracks continuously
+    - Overhead: 1 reference channel per 8 signal channels (12.5% area overhead)
+
+  WHAT THIS ELIMINATES FROM v3.2:
+    - Section 8 (Thermal Identification and Control): DELETED ENTIRELY
+    - Section 16 (Thermal Test Profiles): DELETED ENTIRELY
+    - 50+ heater drivers and their power budget (~15 W): ELIMINATED
+    - THERM register block (0x0800–0x08FF): ELIMINATED
+    - OPLL register block: REDUCED to laser lock only
+    - Calibration step P5 (thermal identification): ELIMINATED
+    - Re-lock acceptance test: ELIMINATED
+
+
+──────────────────────────────────────────────────────────────────────────
+INVENTION 3: RESONANT OPTICAL ACCUMULATION (ROA)
+             "Let photons do the accumulation — kill the capacitor"
+──────────────────────────────────────────────────────────────────────────
+
+v3.2 PROBLEM:
+  The VM (Vector-Matrix) mode integrates N=1024 symbol-rate photocurrents on a
+  56 pF C0G capacitor. This requires: TIA → integrating capacitor → SAR ADC.
+  The kT/C noise floor is 8.6 µV_rms. The integration is ELECTRICAL — photons
+  are converted to electrons, then electrons are accumulated on a capacitor.
+  This means every photon-to-electron conversion adds shot noise, and the TIA
+  adds its own 4.5 pA/√Hz of input-referred noise. The capacitor leaks
+  (R_leak ≥ 38 GΩ, but still finite). The state machine has 8 states.
+
+v4.0 INVENTION:
+  Accumulate the interference products OPTICALLY before photodetection.
+
+  HOW IT WORKS:
+  Replace the discrete TIA+capacitor with an on-chip high-Q microring resonator
+  placed BEFORE the photodetector. The ring has quality factor Q and resonance
+  linewidth δf = f_res / Q.
+
+  Coherent light entering the ring at resonance circulates and builds up.
+  After N round-trips, the intracavity field is the coherent sum of N input
+  fields. This is optical accumulation — it's the same math as capacitor
+  integration, but done with photon fields instead of electron currents.
+
+  The effective accumulation number is:
+    N_eff = (2 × Q) / (2π × n_g × L_ring × f_res / c) ≈ Q / (π × F)
+
+  where F is the finesse. For a SiN ring with Q = 500,000 and FSR = 100 GHz:
+    Finesse F = FSR / δf = 100 GHz / (193.5 THz / 500000) ≈ 258
+    N_eff ≈ 500000 / (π × 258) ≈ 617
+
+  For N_eff = 1024 (matching v3.2 default), we need Q ≈ 830,000 — achievable
+  with state-of-the-art SiN (demonstrated Q > 10^7 in literature).
+
+  The photodetector now sees the ACCUMULATED field, not individual symbols.
+  One photodetection event replaces 1024 integrate-and-dump cycles.
+
+  WHY THIS IS INVENTIVE (NOT BORROWED):
+  High-Q rings are used in filters and lasers. Using them as ACCUMULATORS for
+  optical compute products is new. The ring doesn't filter or route — it SUMS
+  coherent fields over time. The resonance condition replaces the clock-gated
+  integrate-and-dump state machine. The physics does the accumulation for free.
+
+  WHAT THIS CHANGES:
+    - TIA specification: RELAXED dramatically
+      No longer integrating 15 GHz bandwidth signals.
+      The ring outputs a quasi-DC field (bandwidth = δf ≈ 400 kHz for Q=500k).
+      TIA becomes a simple low-bandwidth (1 MHz) transimpedance stage.
+      Input-referred noise requirement drops from 4.5 pA/√Hz to ~0.1 pA/√Hz
+      (easily met by any low-noise op-amp at this bandwidth).
+
+    - ADC specification: RELAXED
+      No longer 12-bit SAR at 10–20 MS/s per channel.
+      Now: 16-bit sigma-delta ADC at 1 MS/s — higher resolution, lower power,
+      commodity parts. Or integrate ADC on the electronic die.
+
+    - Noise budget: IMPROVED
+      Optical accumulation adds fields COHERENTLY (amplitudes add).
+      Electrical accumulation adds INCOHERENTLY (powers add, noise averages √N).
+      Coherent accumulation gives N× signal vs √N× noise = √N SNR improvement
+      over electrical accumulation of same N. For N=1024, this is 30 dB
+      vs the 15 dB you'd get electrically. Effectively doubles the ENOB.
+
+    - State machine: ELIMINATED
+      No RESET→PRECHARGE→INTEGRATE→HOLD→TRANSFER→CONVERT→DUMP→IDLE.
+      The ring charges at its natural rate, reaches steady-state, and the PD
+      continuously outputs the accumulated result. Readout is asynchronous.
+
+  SPECIFICATIONS:
+    Ring radius: ~200 µm (FSR ≈ 100 GHz)
+    Q factor: 800,000–1,000,000 (SiN-OI, demonstrated)
+    Effective N: 1024–1300
+    Accumulation bandwidth: ~400 kHz (self-determined by Q)
+    Readout rate: up to 400 kS/s per channel (Nyquist of ring bandwidth)
+    Ring coupling: critically coupled (maximizes extinction and buildup)
+    Tuning: thermal micro-heater on ring (~2 mW per ring to trim resonance)
+      — NOTE: these are PER-RING µW-scale trims, fundamentally different from
+        the v3.2 zone heaters. They tune the ACCUMULATOR, not fight drift.
+
+  WHAT THIS ELIMINATES FROM v3.2:
+    - Section 5 (TIA Specification): REPLACED with trivial low-BW amplifier
+    - Section 6.1 (VM/CDSR): REPLACED entirely by ring resonator physics
+    - CDSR register block: ELIMINATED (no state machine to control)
+    - kT/C noise floor: IRRELEVANT (no capacitor)
+    - SAR ADC trimming and linearity cal: ELIMINATED
+
+
+──────────────────────────────────────────────────────────────────────────
+INVENTION 4: PROGRAMMABLE COHERENT MESH (PCM)
+             "The routing IS the computation"
+──────────────────────────────────────────────────────────────────────────
+
+v3.2 PROBLEM:
+  Fixed 8-channel AWG routes wavelengths to fixed 90° hybrids. The matrix
+  operation is hardwired. To change the computation, you must change the
+  optical input (modulate different weights onto different wavelengths).
+  This puts all the programmability burden on the electronic side (modulators,
+  DACs) and makes the optical path a fixed pipeline.
+
+v4.0 INVENTION:
+  Replace the AWG + fixed hybrids with a PROGRAMMABLE unitary mesh of tunable
+  Mach-Zehnder Interferometers (MZIs). This is a Reck/Clements decomposition
+  of an arbitrary N×N unitary matrix into a triangular array of 2×2 MZI cells.
+
+  For N=16 inputs (8 wavelengths × 2 polarizations):
+    Number of MZI cells: N(N−1)/2 = 120
+    Each MZI has 2 phase shifters (θ, φ) → 240 tunable phases
+    Total mesh area: ~8 mm × 4 mm on SiN (each MZI is ~500 µm long)
+
+  The mesh performs SIMULTANEOUSLY:
+    (a) Wavelength demultiplexing (learned, not fixed geometry)
+    (b) Polarization handling (learned, not fixed splitter/rotator)
+    (c) The matrix-vector multiply (the actual computation)
+    (d) Coherent combining of partial products
+
+  All in a SINGLE pass of light through the mesh. No separate AWG, no separate
+  hybrids, no separate combiners. One optical fabric does everything.
+
+  WHY THIS IS INVENTIVE (NOT BORROWED):
+  Programmable photonic meshes exist in research. But they're used for
+  COMMUNICATION (switching) or QUANTUM computing (unitary transforms on
+  single photons). Using a Clements mesh as a FUSED demux + compute + combine
+  engine for classical coherent interference MAC operations — where the mesh
+  simultaneously separates wavelengths AND performs the matrix operation —
+  is a new application of the principle. The mesh learns its own demux
+  function through calibration (Invention 7), eliminating the need for
+  precision-fabricated AWG geometry.
+
+  PROGRAMMABILITY:
+    Each phase shifter: thermo-optic (SiN) or electro-optic (if using Si hybrid)
+      - Thermo-optic: ~25 mW per π shift, 10 µs response, 10-bit DAC control
+      - Electro-optic (piezo-actuated SiN): ~10 µW per π shift, 1 ns response
+        [PREFERRED — eliminates thermal cross-talk within the mesh itself]
+
+    For 240 phase shifters with piezo actuation: total mesh tuning power < 2.5 mW
+    Compare v3.2 AWG: passive (0 W) but fixed and lossy (2 dB).
+    The 2.5 mW is negligible, and the mesh is PROGRAMMABLE + lower loss.
+
+  SCALING:
+    N=16: 120 MZIs → 32 mm² — fits on PCIC
+    N=32: 496 MZIs → 130 mm² — fits on PCIC with some reorg
+    N=64: 2016 MZIs → 520 mm² — needs tiled PCIC (see Invention 6)
+    N=128: 8128 MZIs → ~2100 mm² — wafer-scale photonics or multi-chiplet
+
+  The mesh topology naturally scales quadratically — but so does the compute
+  capability. An N×N mesh performs an N×N matrix-vector multiply in ONE optical
+  pass. There's no electrical equivalent that does a full 128×128 multiply in
+  a single clock cycle at this power.
+
+
+──────────────────────────────────────────────────────────────────────────
+INVENTION 5: PHOTONIC-ELECTRONIC CO-PACKAGE (PECP)
+             "The electronic die is a readout ASIC, not a computer"
+──────────────────────────────────────────────────────────────────────────
+
+v3.2 PROBLEM:
+  The FPGA/SoC draws up to 45 A at 0.85 V = ~38 W just for the digital core.
+  Total board power is 250 W. The FPGA does: high-speed ADC interfacing,
+  DMA, state machine control, thermal MPC, and PCIe endpoint. Most of this
+  power goes to tasks that SHOULDN'T EXIST if the optical path did its job.
+
+v4.0 INVENTION:
+  Co-package a tiny custom ASIC (the "Readout and Control Die" — RCD) with the
+  PCIC on a silicon or glass interposer, connected via micro-bump arrays.
+
+  The RCD does ONLY:
+    (a) ADC readout of accumulated signals (16-bit ΣΔ, 1 MS/s × 256 channels)
+    (b) DAC drive for mesh phase shifters (10-bit, 240 channels, static)
+    (c) DAC drive for ring resonator trims (10-bit, 256 channels, quasi-static)
+    (d) Reference channel processing (φ_thermal extraction, 2×2 rotation)
+    (e) PCIe Gen5/CXL 3.0 endpoint (host interface)
+    (f) Health monitoring (power, temperature sensors, LO lock detect)
+
+  WHAT THE RCD DOES NOT DO:
+    - No high-speed (GHz) signal processing
+    - No TIA (ring accumulation eliminated the need)
+    - No SAR ADC at high speed (ΣΔ at 1 MS/s replaces 250 MS/s SAR)
+    - No state machine for integrate-and-dump (ring physics replaces it)
+    - No thermal MPC (coherent self-referencing replaces it)
+    - No FPGA fabric (everything is hardened logic, no reconfigurability waste)
+
+  RCD SPECIFICATIONS:
+    Process: 12 nm or 16 nm FinFET (no need for bleeding edge)
+    Die size: ~25 mm² (compare: the v3.2 FPGA was probably 200+ mm²)
+    Core voltage: 0.8 V
+    Total die power: ≤8 W
+    I/O: 256 ADC channels + 500 DAC channels + PCIe Gen5 x8 (x16 optional)
+    Package: 2.5D with PCIC on silicon interposer, 45 µm micro-bump pitch
+
+  CO-PACKAGE ASSEMBLY:
+    Silicon interposer: ~30×25 mm
+    PCIC die: 15×20 mm, flip-chip bonded to interposer (optical face up)
+    RCD die: 5×5 mm, flip-chip bonded adjacent to PCIC
+    Micro-bumps: RCD↔interposer↔PCIC for all analog signals (short, low-noise)
+    Optical I/O: Grating couplers or edge couplers on PCIC for fiber attach
+    Thermal: PCIC backside contacts copper lid; RCD has separate thermal path
+
+  POWER BUDGET — COMPLETE MODULE:
+    III-V laser gain section:         1.5 W
+    Mesh phase shifters (piezo):      0.003 W  (2.5 mW)
+    Ring resonator trims:             0.5 W    (256 rings × 2 mW average)
+    Readout/Control Die (RCD):        8.0 W
+    Reference channel processing:     0.2 W    (within RCD)
+    Voltage regulators (overhead):    2.0 W
+    ──────────────────────────────────────────
+    TOTAL MODULE POWER:              ~12 W
+
+    Compare v3.2: 250 W (typical), 260 W (with ERM-64).
+    This is a 20× power reduction.
+
+    Even if we're conservative and double everything for margin: ~25 W.
+    Still 10× better than v3.2, and 10× better J/op than H100.
+
+
+──────────────────────────────────────────────────────────────────────────
+INVENTION 6: COHERENT OPTICAL FABRIC (COF)
+             "Scaling without breaking coherence"
+──────────────────────────────────────────────────────────────────────────
+
+v3.2 PROBLEM:
+  Section 9 specifies incoherent WDM for inter-card communication, 400G
+  Ethernet PHY, FEC, CXL memory — all ELECTRICAL at the card boundary.
+  Every time you cross a card boundary, you lose the coherent advantage.
+  The signal goes from light → electrons → processing → electrons → light.
+  Each conversion adds latency, power, and noise.
+
+v4.0 INVENTION:
+  Maintain optical coherence across the entire rack by distributing a shared
+  LO from a single ultra-stable source to every module.
+
+  ARCHITECTURE:
+    One rack contains:
+      - 1 Master LO Unit (MLU): ultra-low-noise laser, linewidth <10 kHz,
+        output 1 W, distributed via PM fiber tree to all modules
+      - Up to 64 PECP modules on OAM-style carriers
+      - Coherent optical backplane: each module has grating couplers that
+        connect to a passive SiN routing PIC in the backplane
+      - The backplane PIC is itself a large Clements mesh — it routes
+        intermediate coherent results between modules WITHOUT photodetection
+
+  INTER-MODULE COHERENT LINK:
+    Because all modules share the same LO phase reference, a coherent signal
+    from Module A arrives at Module B with a KNOWN phase relationship. Module B
+    can interfere this signal with its own LO and extract the result directly.
+    No ADC, no DAC, no FEC, no Ethernet PHY.
+
+    Latency per hop: ~5 ns (propagation through backplane PIC)
+    Compare v3.2: 2 µs per hop (99%ile, including FEC/PHY/DMA)
+    This is 400× lower latency.
+
+    Bandwidth per link: limited only by WDM channel count × symbol rate
+    With 64 wavelengths at 100 GHz spacing over C-band: ~6.4 Tb/s coherent
+    Compare v3.2: 400 Gb/s Ethernet per link
+
+  WHY THIS IS INVENTIVE (NOT BORROWED):
+    Coherent optical interconnect exists in telecom. But telecom re-detects
+    and re-generates at every node. Here, the signal stays coherent END TO END
+    across the entire rack. Module B doesn't "receive" data — it CONTINUES
+    the interference computation that Module A started. The rack is one
+    distributed interferometer, not a network of independent computers
+    talking over a wire.
+
+  MEMORY ACCESS:
+    CXL 3.0 memory pool connects via coherent links (not electrical CXL).
+    Memory controllers have their own small PCIC for coherent I/O.
+    Effective memory bandwidth per module: ≥200 GB/s (coherent, no FEC overhead)
+    Pool size: ≥40 TB (same as v3.2 target, but accessed coherently)
+
+  WHAT THIS ELIMINATES FROM v3.2:
+    - Section 9 (Interconnect, Fabric, Memory): REPLACED entirely
+    - 400G Ethernet PHY: ELIMINATED
+    - FEC RS(544,514): ELIMINATED (coherent link doesn't need FEC at these BERs)
+    - 3-stage Clos topology: REPLACED by programmable backplane mesh
+
+
+──────────────────────────────────────────────────────────────────────────
+INVENTION 7: SELF-CALIBRATING PILOT PROTOCOL (SCPP)
+             "The system calibrates itself using its own computation"
+──────────────────────────────────────────────────────────────────────────
+
+v3.2 PROBLEM:
+  Calibration requires external equipment (precision current sources, optical
+  tones, VNA S21 sweeps), factory procedures (TDC_Calibrate, VM_Linearity,
+  SM_Trim), stored NVM coefficients, and re-calibration on thermal events.
+  Sections 13, 15, 16 are dedicated to calibration and test.
+
+v4.0 INVENTION:
+  The PCIC can measure its own transfer matrix using pilot tones injected
+  through the mesh, detected by its own photodetectors, and corrected by
+  its own RCD.
+
+  HOW IT WORKS:
+  1. Inject known phase/amplitude patterns into the mesh inputs
+     (using the on-chip laser + on-chip modulators at known DAC settings)
+  2. Measure the output at each photodetector channel
+  3. The measured outputs = M × inputs, where M is the actual transfer matrix
+  4. Since inputs are known, solve for M
+  5. Compare M to the desired matrix; compute correction DAC settings
+  6. Iterate until ||M_actual − M_desired|| < ε
+
+  This runs continuously in background during idle cycles, and as a fast
+  sweep during boot. No external equipment. No factory calibration. No NVM
+  coefficient tables that go stale.
+
+  CALIBRATION TIME:
+    Boot self-cal: ~50 ms (one full matrix sweep + correction)
+    Background tracking: continuous, ~1 correction/second
+    Compare v3.2: bring-up checklist has 12 manual steps, hours of procedure
+
+  WHY THIS IS INVENTIVE:
+    The system uses coherent interference to MEASURE coherent interference
+    errors. The calibration primitive IS the compute primitive. There's no
+    separate sensor, no separate reference standard. The pilot protocol is
+    just a specific computation that the system already knows how to do —
+    multiplying a known vector by the mesh and checking the answer.
+
+  WHAT THIS ELIMINATES FROM v3.2:
+    - Section 13 (Manufacturing Test): REDUCED to simple power-on self-test
+    - Section 15 (Calibration Scripts): REPLACED by on-chip SCPP
+    - Section 20 (Bring-up Checklist): REDUCED from 12 steps to 3:
+        1. Power on → self-cal → verify (automated, ~1 minute)
+        2. Host enumeration (PCIe)
+        3. Run acceptance benchmark (automated)
+    - External calibration equipment: ELIMINATED from BOM
+
+
+════════════════════════════════════════════════════════════════════════════
+PART II — SYSTEM SPECIFICATION (PRODUCTION-GRADE)
+════════════════════════════════════════════════════════════════════════════
+
+──────────────────────────────────────────────────────────────────────────
+0) CONSTANTS AND GLOBAL PARAMETERS
+──────────────────────────────────────────────────────────────────────────
+  q = 1.602176634e−19 C; k = 1.380649e−23 J/K; T_ref = 298.15 K.
+  c = 2.99792458e8 m/s; n_SiN = 1.99 @ 1550 nm; n_g_SiN ≈ 2.05 (group).
+  Symbol rate (optical): 15 Gsym/s (unchanged from v3.2).
+  Effective accumulation N_eff: 1024 (set by ring Q ≈ 830,000).
+  Mesh size: 16×16 baseline (scalable to 128×128 in tiled config).
+  Readout channels: 256 (16 mesh outputs × 8 wavelengths × 2 polarizations).
+  Module power envelope: ≤25 W (with margin).
+  Module form factor: OAM-compatible, 102×165 mm.
+
+
+──────────────────────────────────────────────────────────────────────────
+1) PCIC (PHOTONIC COMPUTE IC) PHYSICAL SPECIFICATION
+──────────────────────────────────────────────────────────────────────────
+1.1 DIE DIMENSIONS
+  15.0 mm × 20.0 mm × 0.725 mm (standard SiN-OI wafer thickness).
+  200 mm wafer; ~40 die per wafer (conservative).
+
+1.2 WAVEGUIDE PARAMETERS
+  SiN core: 800 nm × 1500 nm (single-mode TE at 1550 nm).
+  SiO2 top cladding: 3.0 µm. SiO2 bottom cladding: 3.0 µm.
+  Propagation loss: ≤0.03 dB/cm (demonstrated in LIGENTEC AN800).
+  Bend radius (minimum): 100 µm (loss < 0.01 dB per 90° bend).
+  Waveguide pitch (minimum): 5 µm (crosstalk < −40 dB).
+
+1.3 LAYOUT ZONES (APPROXIMATE)
+  Zone A (0–5 mm): Laser gain section + Vernier ring cavities (8 channels)
+  Zone B (5–8 mm): Ring-based wavelength demux / accumulator array
+  Zone C (8–16 mm): Programmable Clements mesh (16×16 = 120 MZI cells)
+  Zone D (16–18 mm): Reference interferometer array (32 channels)
+  Zone E (18–20 mm): Photodetector array + electrical pad ring for micro-bumps
+
+1.4 OPTICAL I/O
+  Edge couplers (preferred) or grating couplers for fiber attach.
+  LO input: 1 PM fiber, 40 mW.
+  Signal inputs: 8 SM fibers or 1 fiber array (8-channel).
+  Inter-module coherent output: 8 SM fibers to backplane.
+  Coupling loss per facet: ≤1.0 dB (edge), ≤1.5 dB (grating).
+
+
+──────────────────────────────────────────────────────────────────────────
+2) RCD (READOUT AND CONTROL DIE) SPECIFICATION
+──────────────────────────────────────────────────────────────────────────
+2.1 PROCESS AND DIE
+  TSMC 16FFC or GlobalFoundries 12LP; die ≤25 mm².
+  Core voltage: 0.8 V; I/O voltage: 1.8 V.
+
+2.2 ADC SUBSYSTEM
+  256 channels of 16-bit sigma-delta ADC.
+  Sample rate: 1 MS/s per channel (oversampled; ring bandwidth ~400 kHz).
+  Input range: ±1.0 V differential.
+  ENOB: ≥14.0 bits (thermal noise limited at this bandwidth).
+  Total ADC power: ~2 W (256 × ~8 mW per channel).
+
+2.3 DAC SUBSYSTEM — MESH PROGRAMMING
+  240 channels of 10-bit voltage-output DAC for MZI phase shifters.
+  Update rate: quasi-static (only changes when reprogramming the matrix).
+  Output: 0–3.3 V (piezo drive) or 0–1.0 V (thermo-optic fallback).
+  Total DAC power: ~0.5 W.
+
+2.4 DAC SUBSYSTEM — RING TRIMS
+  256 channels of 10-bit current-output DAC for ring resonator micro-heaters.
+  Output: 0–5 mA (2 mW typical per ring).
+  Total DAC power: ~0.3 W.
+
+2.5 REFERENCE PROCESSING UNIT (RPU)
+  Hardened logic block that:
+    - Reads 32 reference channel ADCs continuously
+    - Extracts φ_thermal per zone (CORDIC-based arctangent, 16-bit)
+    - Computes 2×2 rotation corrections for adjacent signal channels
+    - Applies corrections in fixed-point before output to host
+  Latency: ≤1 µs from ADC sample to corrected output.
+  Power: ~0.2 W.
+
+2.6 SELF-CALIBRATION ENGINE (SCE)
+  Hardened logic block that:
+    - Generates pilot patterns (known phase/amplitude vectors)
+    - Drives them into mesh via DAC subsystem
+    - Reads back results via ADC subsystem
+    - Computes transfer matrix M_actual (fixed-point matrix multiply)
+    - Computes correction Δθ for each MZI phase shifter
+    - Updates mesh DACs
+  Boot cal: ~50 ms. Background cal: 1 iteration/s, ~100 µW incremental power.
+
+2.7 HOST INTERFACE
+  PCIe Gen5 x8 endpoint (upgradeable to x16 or CXL 3.0 via optional PHY).
+  DMA engine with scatter-gather; 4 rings, 64 MSI-X vectors.
+  Effective payload bandwidth: ≥24 GB/s (x8), ≥48 GB/s (x16).
+  BAR0: MMIO registers (compatible superset of v3.2 map, consolidated).
+  BAR1: Doorbell page for DMA submission.
+
+2.8 HEALTH AND TELEMETRY
+  On-die temperature sensors: 4 (corners), ±0.5°C.
+  PCIC temperature sensors: via reference channels (more accurate than RTDs).
+  Power monitors: on-chip current sense for each rail.
+  Telemetry bus: internal, polled at 10 Hz, logged to host via MSI-X.
+
+
+──────────────────────────────────────────────────────────────────────────
+3) INTERPOSER AND MODULE ASSEMBLY
+──────────────────────────────────────────────────────────────────────────
+3.1 INTERPOSER
+  Silicon or glass; 30 mm × 25 mm × 0.3 mm.
+  Redistribution layers: 4 metal layers; 2 µm line/space.
+  Through-interposer vias (TSVs or TGVs): 50 µm pitch for power delivery.
+  Micro-bump pads: 45 µm pitch for PCIC↔RCD analog signals.
+
+3.2 PACKAGE
+  Organic substrate BGA; 55 mm × 55 mm body; 2028-ball 1.0 mm pitch.
+  Lid: copper with thermal interface material to PCIC backside.
+  Optical I/O: fiber array connector on package edge (MT-compatible, PM for LO).
+  TDP: 25 W (module-level, including all components).
+
+3.3 MODULE CARRIER
+  OAM-compatible form factor: 102 mm × 165 mm PCB.
+  Mezzanine connector to backplane.
+  On-module voltage regulators: 12V → 0.8V (for RCD), 12V → 5V (for PCIC laser).
+  Total module board components: ~200 (vs ~2000+ in v3.2 PCB).
+
+
+──────────────────────────────────────────────────────────────────────────
+4) POWER TREE (SIMPLIFIED)
+──────────────────────────────────────────────────────────────────────────
+4.1 RAILS
+  R0  +12VIN     12.0 V ±5%    Imax 3 A    (module input from backplane)
+  R1  +5V0_LAS    5.0 V ±3%    Imax 0.5 A  (III-V laser bias)
+  R2  +3V3_DAC    3.3 V ±2%    Imax 0.5 A  (mesh DACs, ring trim DACs)
+  R3  +1V8_IO     1.8 V ±2%    Imax 1.0 A  (RCD I/O)
+  R4  +0V8_CORE   0.8 V ±2%    Imax 12 A   (RCD digital core)
+
+  Total rails: 5 (vs 8 in v3.2).
+  Total max power draw from 12V: ~25 W (vs 260 W in v3.2).
+
+4.2 SEQUENCING
+  t0  Enable R4 (+0V8_CORE); soft-start 2 ms; assert PG4.
+  t1  Enable R3 (+1V8_IO) after PG4; delay 1 ms; assert PG3.
+  t2  Enable R2 (+3V3_DAC) after PG3; delay 1 ms; assert PG2.
+  t3  Enable R1 (+5V0_LAS) after PG2 + interlock OK; ramp 3 ms.
+  Power-down: reverse order.
+
+4.3 DECOUPLING
+  At RCD: standard digital decoupling per datasheet.
+  At DACs: 1 µF + 100 nF per group of 8 channels.
+  At laser: dedicated LC filter, ripple ≤1 mV_rms.
+
+
+──────────────────────────────────────────────────────────────────────────
+5) CLOCKING
+──────────────────────────────────────────────────────────────────────────
+5.1 ON-MODULE
+  No OCXO required. No 15 GHz PLL required.
+  The optical symbol rate is set by the LASER MODULATION, not an electronic
+  clock. The RCD needs only a standard 100 MHz crystal oscillator for its
+  digital logic and ADC timing.
+
+  Crystal: 100 MHz; jitter ≤500 fs_rms (trivial spec); 1.8V; 3×2.5 mm.
+
+  WHY THE 15 GHz CLOCK IS GONE:
+  In v3.2, the 15 GHz clock drove the symbol-rate sampling and the TDC for
+  metastability checking. With resonant optical accumulation (Invention 3),
+  there is no symbol-rate electronic sampling. The ring accumulates optically
+  and the readout is at ~1 MS/s. The TDC is eliminated because there's no
+  high-speed decision boundary to guard.
+
+5.2 RACK-LEVEL
+  Master LO Unit provides optical frequency reference (not electronic clock).
+  Phase coherence across modules is maintained OPTICALLY, not electronically.
+
+
+──────────────────────────────────────────────────────────────────────────
+6) REGISTER MAP (CONSOLIDATED)
+──────────────────────────────────────────────────────────────────────────
+Address space: 32-bit word addresses (byte = address × 4). Little-endian.
+
+Block         Base      Size    Description
+─────────────────────────────────────────────────────────────────
+CTRL          0x0000    0x0040  Global control, status, version, interlock
+LASER         0x0040    0x0040  Laser enable, bias current, wavelength trim
+MESH          0x0080    0x0200  Phase shifter DAC values (240 entries)
+RING          0x0280    0x0200  Ring resonator trim DACs (256 entries)
+ADC           0x0480    0x0200  ADC readout data (256 channels, read-only)
+REF           0x0680    0x0080  Reference channel data and φ_thermal (32 ch)
+CAL           0x0700    0x0080  Self-calibration control and status
+DMA           0x0780    0x0080  DMA ring descriptors and doorbells
+HEALTH        0x0800    0x0040  Temperature, power, fault registers
+─────────────────────────────────────────────────────────────────
+Total: 0x0840 words = 8.25 KB
+
+Compare v3.2: ~8 KB but most of it was 64×4 repetitive CDSR/SM per-channel
+registers for state machine control. v4.0 register map is SMALLER despite
+having 4× more channels, because the optical physics replaces the state machines.
+
+6.1 KEY REGISTERS
+
+  CTRL_STATUS   @0x0000  [31] READY, [30] CAL_DONE, [29] LO_LOCK, [28] FAULT
+  CTRL_CMD      @0x0004  [3:0] COMMAND: 0=NOP, 1=RUN, 2=CAL, 3=STOP, 4=RESET
+  CTRL_VERSION  @0x0008  [31:16] MAJOR.MINOR, [15:0] PATCH
+
+  LASER_EN      @0x0040  [7:0] per-channel enable bits
+  LASER_BIAS    @0x0044  [15:0] III-V bias current DAC (mA, 0.1 mA step)
+  LASER_WAVE[c] @0x0048+4c  [9:0] Vernier ring trim for channel c (0..7)
+
+  MESH_PHASE[m] @0x0080+4m  [9:0] phase DAC for MZI m (0..239); [15] LOCK
+
+  RING_TRIM[r]  @0x0280+4r  [9:0] heater DAC for ring r (0..255)
+
+  ADC_DATA[ch]  @0x0480+4ch [15:0] latest 16-bit sample, channel ch (0..255), RO
+  ADC_CTRL      @0x0480+0x400 [0] CONTINUOUS, [1] SINGLE_SHOT, [7:4] DECIMATION
+
+  REF_PHI[z]    @0x0680+4z  [15:0] φ_thermal for zone z (0..31), signed, RO
+  REF_STATUS    @0x06FC     [31] TRACKING, [30] OVERFLOW
+
+  CAL_CTRL      @0x0700     [0] START, [1] ABORT, [2] CONTINUOUS_EN
+  CAL_STATUS    @0x0704     [31] DONE, [30] PASS, [15:0] RESIDUAL_ERROR
+  CAL_ITER      @0x0708     [15:0] iteration count since last START
+
+  DMA_BASE[r]   @0x0780+8r  [63:0] ring buffer base address (4 rings, r=0..3)
+  DMA_SIZE[r]   @0x0784+8r  [15:0] ring size in entries
+  DMA_HEAD[r]   @0x07C0+4r  [15:0] head pointer (hardware writes)
+  DMA_TAIL[r]   @0x07D0+4r  [15:0] tail pointer (software writes)
+  DMA_DOORBELL  @0x07E0     write any value to trigger DMA submission
+
+  HEALTH_TEMP   @0x0800     [15:0] PCIC temp (°C × 100, signed); [31:16] RCD temp
+  HEALTH_POWER  @0x0804     [15:0] total module power (mW)
+  HEALTH_FAULT  @0x0808     [7:0] fault code (0=none); sticky, W1C
+
+
+──────────────────────────────────────────────────────────────────────────
+7) FIRMWARE: BOOT AND RUNTIME (SIMPLIFIED)
+──────────────────────────────────────────────────────────────────────────
+7.1 BOOT SEQUENCE
+  S0_POWER_ON:    Rails sequence; RCD resets; BIST runs (10 ms)
+  S1_LASER_LOCK:  Enable III-V bias; Vernier rings tune to grid (20 ms)
+  S2_SELF_CAL:    Run SCPP; program mesh + rings; verify (50 ms)
+  S3_READY:       Assert READY; enumerate on PCIe; accept host commands
+
+  Total boot time: ~80 ms (cold) / ~50 ms (warm, laser already locked)
+  Compare v3.2: 12-step manual bring-up procedure
+
+7.2 RUNTIME STATES
+  R0_IDLE:    Module powered, mesh programmed, waiting for host command
+  R1_RUN:     Continuous ADC readout → DMA to host
+  R2_RECAL:   Background self-cal (transparent to host, ~1% throughput loss)
+  R3_REPROGRAM: Host writing new matrix → mesh DAC update → verify → R1_RUN
+  R4_FAULT:   Persistent error; module reports to host, awaits reset
+
+7.3 HOST API (SIMPLIFIED)
+  The host driver sees a simple interface:
+    1. Write matrix weights to MESH_PHASE registers (or upload via DMA)
+    2. Write CTRL_CMD = RUN
+    3. Read results from DMA ring buffers (interrupt-driven or polled)
+    4. Write new matrix when needed → CTRL_CMD = REPROGRAM → RUN
+
+  No calibration scripts. No thermal management. No TDC tuning.
+  The firmware handles everything internally via SCPP and RPU.
+
+
+──────────────────────────────────────────────────────────────────────────
+8) COHERENT OPTICAL BACKPLANE (RACK-LEVEL)
+──────────────────────────────────────────────────────────────────────────
+8.1 MASTER LO UNIT (MLU)
+  Ultra-low-noise external-cavity laser.
+  Output: 1 W CW at 1550 nm; linewidth ≤10 kHz.
+  Distribution: 1×64 PM fiber splitter tree to module slots.
+  Per-module LO power: ~15 mW (after splitter + connector losses).
+  MLU power: ~5 W (separate from module power budget).
+  Redundancy: hot-standby MLU with automatic failover (fiber switch).
+
+8.2 BACKPLANE PIC
+  Passive SiN routing chip on the backplane; 50×80 mm.
+  Implements a configurable 64×64 optical switch matrix.
+  Insertion loss: ≤3 dB any path.
+  Reconfiguration time: ~10 µs (thermo-optic switches).
+  No active electronics on the backplane PIC — purely passive waveguides
+  with thermo-optic phase shifters driven by a backplane controller.
+
+8.3 RACK SPECIFICATION
+  Modules per rack: up to 64
+  Rack power (compute): 64 × 25 W = 1600 W (vs 64 × 260 W = 16,640 W for v3.2)
+  Rack power (MLU + cooling + backplane): ~400 W
+  Total rack power: ~2000 W for 64 modules
+  Rack compute density: 64 × (16×16 mesh × 1024 accumulation × 400 kS/s)
+                      = ~2.7 × 10^12 effective MAC/s per rack
+  Energy efficiency: ~2000 W / 2.7 TMAC/s ≈ 0.74 pJ/MAC
+
+  For comparison, H100 at 300W achieves ~1000 TFLOPS peak (FP8) = 3.3 pJ/FLOP.
+  At equivalent precision (FP16): H100 ~500 TFLOPS = 6.0 pJ/FLOP.
+  COIA v4.0 at 14+ effective bits: 0.74 pJ/MAC. This is ~8× better J/op.
+
+
+──────────────────────────────────────────────────────────────────────────
+9) SAFETY AND INTERLOCKS
+──────────────────────────────────────────────────────────────────────────
+  Inputs: FIBER_DOOR, LO_PWR_OK, TEMP_OK, EMERGENCY_STOP.
+  Any FALSE → LASER_EN = 0 within 50 µs (faster than v3.2's 50 ms).
+  Laser Class 1M enclosure at module level; Class 1 at rack level.
+  Eye safety: all fiber-coupled; no free-space beams.
+  Fault codes logged to HEALTH_FAULT register and reported via MSI-X.
+
+
+──────────────────────────────────────────────────────────────────────────
+10) MANUFACTURING TEST (SIMPLIFIED)
+──────────────────────────────────────────────────────────────────────────
+10.1 WAFER-LEVEL (PCIC)
+  Automated probe: waveguide loss, ring Q, PD responsivity, laser threshold.
+  Pass/fail at wafer sort eliminates bad die before packaging.
+
+10.2 MODULE-LEVEL
+  Step 1: Power-on self-test (automatic, ~80 ms, firmware-driven)
+  Step 2: Self-calibration (automatic, reports PASS/FAIL to host)
+  Step 3: Acceptance benchmark:
+    - Insert known matrix → run → verify output ≤1 LSB from expected
+    - Measure ENOB: ≥14.0 bits
+    - Measure throughput: ≥400 kS/s per channel
+    - Measure power: ≤25 W
+    - Measure thermal tracking: φ_residual ≤0.1° RMS over 30 minutes
+  Step 4: Log results; assign serial; ship
+
+  Total test time per module: ~5 minutes (vs hours in v3.2)
+
+
+──────────────────────────────────────────────────────────────────────────
+11) ACCEPTANCE CRITERIA
+──────────────────────────────────────────────────────────────────────────
+  A1  Chip insertion loss (source to PD): ≤2.0 dB P95
+  A2  ENOB: ≥14.0 bits (with ring accumulation N=1024)
+  A3  Phase residual: ≤0.1° RMS (P95, 30 min, no heaters)
+  A4  Module power: ≤25 W typical
+  A5  Self-cal time: ≤100 ms from cold boot to READY
+  A6  Energy efficiency: ≥8× J/op vs H100 (uncompressed, equivalent precision)
+  A7  Mesh programmability: full 16×16 unitary matrix, update in ≤100 µs
+  A8  Rack latency (inter-module coherent hop): ≤10 ns
+  A9  Rack compute density: ≥2 TMAC/s in 2000 W envelope
+
+
+──────────────────────────────────────────────────────────────────────────
+12) SCALING ROADMAP
+──────────────────────────────────────────────────────────────────────────
+  GEN 1 (this document):
+    16×16 mesh, 256 readout channels, single PCIC, 25 W module.
+    Rack: 64 modules, ~2.7 TMAC/s, 2000 W.
+
+  GEN 2 (tiled PCIC):
+    64×64 mesh via 4× PCIC tiles on larger interposer.
+    1024 readout channels per module, ~50 W.
+    Rack: 64 modules, ~44 TMAC/s, 4000 W.
+
+  GEN 3 (wafer-scale photonics):
+    128×128 mesh on 300 mm wafer-scale SiN PIC.
+    4096 readout channels per module, ~100 W.
+    Rack: 32 modules, ~175 TMAC/s, 4500 W.
+
+  Each generation scales the SAME INVENTION. No architectural change.
+  Only the mesh size grows. The same 7 inventions apply at every scale.
+
+
+──────────────────────────────────────────────────────────────────────────
+13) BILL OF MATERIALS — MODULE (PARAMETRIC)
+──────────────────────────────────────────────────────────────────────────
+  13.1 PCIC die (SiN-OI + III-V + Ge; 15×20 mm)
+  13.2 RCD die (16nm FinFET; 5×5 mm)
+  13.3 Silicon interposer (30×25 mm; 4 RDL + TSV)
+  13.4 BGA package substrate (55×55 mm; organic)
+  13.5 Copper lid + TIM
+  13.6 Fiber array connector (MT-compatible, 8+1 fiber, PM for LO)
+  13.7 Crystal oscillator (100 MHz, 3×2.5 mm)
+  13.8 Voltage regulators: 3× (12V→0.8V, 12V→1.8V, 12V→5V)
+  13.9 Decoupling capacitors (~100 total, 0402/0201)
+  13.10 OAM carrier PCB (102×165 mm, 6-layer, standard FR4)
+  13.11 Mezzanine connector to backplane
+
+  Total unique component types: ~15 (vs ~50+ in v3.2)
+  Total component count per module: ~200 (vs ~2000+ in v3.2)
+
+
+──────────────────────────────────────────────────────────────────────────
+14) WHAT WAS DELETED FROM v3.2 AND WHY
+──────────────────────────────────────────────────────────────────────────
+  v3.2 Section 1 (PCB/Layout):
+    → REPLACED by module carrier (10× simpler PCB, no 12-layer impedance-
+      controlled stackup needed for 50Ω traces — signals are optical or slow).
+
+  v3.2 Section 3 (Clocking/PLL/15 GHz):
+    → ELIMINATED. No electronic symbol-rate sampling. Crystal oscillator only.
+
+  v3.2 Section 4 (Discrete Optical Subsystem):
+    → REPLACED by PCIC Invention 1. All on-chip.
+
+  v3.2 Section 5 (TIA):
+    → ELIMINATED by Invention 3 (resonant accumulation). Simple low-BW amp.
+
+  v3.2 Section 6 (VM/CDSR and SM/ERM-64):
+    → ELIMINATED by Invention 3. Ring resonator replaces state machine.
+      SM/ERM-64 mode is subsumed by programmable mesh — the mesh can be
+      configured for spectral monitoring by loading an appropriate matrix.
+
+  v3.2 Section 7 (Timing/Jitter/Metastability):
+    → ELIMINATED. No high-speed electronic decision boundary. No TDC needed.
+      The readout is at 1 MS/s — metastability is not a concern at this speed.
+
+  v3.2 Section 8 (Thermal Identification and Control):
+    → ELIMINATED by Invention 2. Coherent self-referencing cancels thermal drift.
+
+  v3.2 Section 9 (Interconnect/Fabric/Incoherent WDM):
+    → REPLACED by Invention 6. Coherent optical backplane.
+
+  v3.2 Section 10 (Register Map — 64 repetitive CDSR + 64 SM blocks):
+    → REPLACED by consolidated register map (Section 6 above). 90% smaller.
+
+  v3.2 Sections 13, 15, 16 (Test, Calibration, Thermal Profiles):
+    → REPLACED by Invention 7. Self-calibrating, 5-minute test, no external gear.
+
+  v3.2 Section 18 (BOM — OCXO, discrete PLL, 8 lasers, AWG, PDs, TIAs, etc.):
+    → REPLACED by Section 13 above. 15 component types vs 50+.
+
+
+════════════════════════════════════════════════════════════════════════════
+PART III — THE INVENTION PRINCIPLE, FORMALIZED
+════════════════════════════════════════════════════════════════════════════
+
+For the record, here is the principle that guided every decision in this document:
+
+  COIA INVENTION PRINCIPLE:
+  "When a problem arises in a coherent optical interference system,
+   the solution must use coherent optical interference as its primitive.
+   If a solution borrows from a different domain (electronic control,
+   mechanical alignment, thermal brute-force), it will create secondary
+   problems that require further borrowed solutions, until the original
+   invention is buried. Every fix must grow from the same root."
+
+  Applied:
+    Problem: Thermal drift.        Solution: Coherent self-referencing.
+    Problem: Accumulation noise.   Solution: Resonant optical accumulation.
+    Problem: Fixed routing.        Solution: Programmable coherent mesh.
+    Problem: Inter-card scaling.   Solution: Coherent optical backplane.
+    Problem: Calibration drift.    Solution: Coherent self-calibration.
+    Problem: Complex electronics.  Solution: Let optics do the work; readout only.
+    Problem: Discrete component loss. Solution: Monolithic photonic IC.
+
+  In every case: MORE coherence, not less. Every invention is a branch
+  from the same root.
+
+════════════════════════════════════════════════════════════════════════════
+END OF DOCUMENT — COIA-Ω v4.0
+════════════════════════════════════════════════════════════════════════════
